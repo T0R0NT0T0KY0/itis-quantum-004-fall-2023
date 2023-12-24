@@ -1,54 +1,44 @@
 import cirq
 import numpy as np
 
-
-def phase_estimation(U, psi, n, Nreps):
-    """
-    Реализация алгоритма оценки фазы.
-
-    Параметры:
-    U (cirq.Gate): Унитарный оператор, для которого проводится оценка фазы.
-    psi (numpy.ndarray): Входное состояние.
-    n (int): Количество битов для оценки фазы.
-    Nreps (int): Количество повторений алгоритма.
-
-    Возвращает:
-    None: Выводит оценку фазы для каждого повторения на экран.
-    """
-
-    # Инициализация квантовой схемы
+def inverse_fourier_transform(qubits):
+    n = len(qubits)
     circuit = cirq.Circuit()
 
-    # Инициализация кубитов
-    qubits = cirq.LineQubit.range(n + 1)
+    # Apply Hadamard gates
+    for i in range(n):
+        circuit.append(cirq.H(qubits[i]))
 
-    # Применение оператора U controlled
-    circuit.append(U.on(qubits[n]).controlled_by(*qubits[0:n]))
+    # Apply controlled-phase gates
+    for control_qubit in range(n):
+        for target_qubit in range(control_qubit + 1, n):
+            angle = 2.0 * np.pi / (2 ** (target_qubit - control_qubit + 1))
+            circuit.append(cirq.CZ(qubits[control_qubit], qubits[target_qubit]) ** angle)
 
-    # Обратное преобразование Фурье
-    circuit.append(cirq.inverse(cirq.qft(*qubits[0:n], without_reverse=True)))
+    # Swap qubits
+    for i in range(n // 2):
+        circuit.append(cirq.SWAP(qubits[i], qubits[n - i - 1]))
 
-    # Измерение
-    circuit.append(cirq.measure(*qubits[0:n], key='result'))
+    return circuit
 
-    # Выполнение Nreps повторений
-    for _ in range(Nreps):
-        # Запуск симулятора
-        simulator = cirq.Simulator()
-        result = simulator.run(circuit, repetitions=1)
+# Шаг 1: Создание входного состояния
+input_state = np.array([1, 0, 0, 0])  # Пример: состояние |0000⟩
+qubits = cirq.LineQubit.range(len(input_state))
 
-        # Получение оценки фазы из результатов измерений
-        binary_str = result.measurements['result'][0]
-        theta = np.sum([int(bit) * 2 ** (n - i - 1) for i, bit in enumerate(binary_str)]) / 2 ** n
+# Подготовка входного состояния
+circuit_input = cirq.Circuit()
+for i, bit in enumerate(input_state):
+    if bit:
+        circuit_input.append(cirq.X(qubits[i]))
 
-        print(f"Оценка фазы (в десятичной форме): {theta}")
+# Шаг 2: Применение обратного преобразования Фурье
+circuit_transform = inverse_fourier_transform(qubits)
 
+# Шаг 3: Измерение результатов
+simulator = cirq.Simulator()
+result = simulator.simulate(circuit_input + circuit_transform)
 
-# Пример использования
-# Задайте свой оператор U, состояние psi, количество битов n и количество повторений Nreps
-U = cirq.X  # Пример: оператор X (NOT)
-psi = np.array([1, 0])  # Пример: состояние |0⟩
-n = 7  # Количество битов
-Nreps = 13  # Количество повторений
-
-phase_estimation(U, psi, n, Nreps)
+# Шаг 4: Анализ результатов
+output_state = result.final_state_vector
+print("Входное состояние:", input_state)
+print("Выходное состояние после обратного преобразования Фурье:", output_state)
